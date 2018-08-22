@@ -30,5 +30,5 @@ sv.bedpe: file with the SVs
 fusions.tsv: gene fusion file
 distance: maximum allowed distance between an overlapping SV and gene fusion
 out
-out_file: output file with the gene fusions and closer SV (within the given distance) and SV support type. For an example check example/out
+out_file: output file with the gene fusions and closer SV (within the given distance) and SV support type. For an example check the file example/out
 
