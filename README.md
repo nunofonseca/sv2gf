@@ -18,7 +18,7 @@ Simply copy the scripts in the bin folder to a folder in the PATH.
 
 Structural variant (SV) calls and gene fusion calls for a given sample. Examples are provided in the example folder.
 
-SVs file is a bedpe file containing the following columns: "chrom1","start1","end1","chrom2","start2","end2","sv_id","pe_support","strand1","strand2","svclass","svmethod".
+SVs file (bedpe format) should contain the following columns: "chrom1","start1","end1","chrom2","start2","end2","sv_id","pe_support","strand1","strand2","svclass","svmethod".
 
 The gene fusions file is expected to contain the following columns: "FusionGene","KnownGene1","KnownGene2","GeneId1","GeneId2","Strand","Chromosome1","Breakpoint1","Chromosome2","Breakpoint2","FrameShift","FusionJunctionSequence","SplicePattern","Number of Supporting Reads".
 
