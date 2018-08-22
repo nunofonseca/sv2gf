@@ -1,0 +1,12 @@
+language: R
+
+env:
+
+before_script:
+
+  script: pwd && ls && ./run_tests.sh
+
+branches:
+  only:
+    - master
+- /.*/
