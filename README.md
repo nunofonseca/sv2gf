@@ -24,7 +24,7 @@ The gene fusions file is expected to contain the following columns: "FusionGene"
 
 ## Running
 
-usage: sv_genefusions_overlap.R <sv.bedpe> <fusions.tsv> <distance in bp>  n out_file
+usage: sv_genefusions_overlap.R <sv.bedpe> <fusions.tsv> <distance in bp>  n <out_file>
 
 sv.bedpe: file with the SVs
 fusions.tsv: gene fusion file
