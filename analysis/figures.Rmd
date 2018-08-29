@@ -1,0 +1,239 @@
+---
+title: "Figure 5 Panel C"
+output:
+  html_document:
+    df_print: paged
+---
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(cowplot))
+```
+
+
+# Set fusion data
+```{r}
+fusion.file = "./OUTPUT/pcawg3_fusions_v16.summary.tsv"
+gene.file = "./data/reference/gencode.v19.annotation.hs37d5.gene.tsv"
+meta.file = "./data/meta/pcawg.rnaseq.extended.metadata.aliquot_id.V4.tsv"
+```
+
+
+# Load fusinos
+```{r}
+#' Load fusions
+
+load_fusion <- function(fusion.file, meta.file, gene.file) {
+  suppressPackageStartupMessages(library(dplyr))
+  suppressPackageStartupMessages(library(readr))
+  meta <- read_tsv(meta.file)
+  fusions <- read_tsv(fusion.file, 
+                      col_types = cols( gene1_total_cn = "c",
+                                        gene1_major_cn = "c",
+                                        gene1_minor_cn = "c",
+                                        gene2_total_cn = "c",
+                                        gene2_major_cn = "c",
+                                        gene2_minor_cn = "c"))
+  genes <- read_tsv(gene.file, col_types = cols(chrom = "c"))
+  fusions <- fusions %>% 
+    inner_join(genes[,c("chrom","start","end","strand", "gene_name","gene_type")], 
+               by = c("known_gene1" = "gene_name")) %>% 
+    dplyr::rename( strand = strand.x, gene1_chrom = chrom, gene1_start = start, gene1_end = end, gene1_strand = strand.y,  gene1_type = gene_type) %>% 
+    inner_join(genes[,c("chrom","start","end","strand", "gene_name","gene_type")], 
+               by = c("known_gene2" = "gene_name")) %>% 
+    dplyr::rename(strand = strand.x , gene2_chrom = chrom, gene2_start = start, gene2_end = end, gene2_strand = strand.y, gene2_type = gene_type)  %>% 
+    mutate(frameshift = ifelse(is.na(frameshift), UTR, frameshift)) %>% 
+    inner_join(meta[,c("aliquot_id", "wgs_aliquot_id","histology_abbreviation")])
+  return(fusions)
+  
+}
+
+fusions <- load_fusion(fusion.file,meta.file, gene.file)
+```
+
+
+```{r}
+####################
+## Complex fusion
+####################
+complex_fusions <- fusions %>% 
+  filter( grepl("complex", SV_SVmatchtype))
+```
+
+```{r}
+decode_complex_match <- function(fusion_line) {
+  place_holder = list()
+  #--- parsing 
+  match_type = fusion_line$SV_SVmatchtype
+  match_info = strsplit(match_type, ":")[[1]]
+  gene1 = list(chr = fusion_line$gene1_chrom, 
+               start = fusion_line$gene1_start,
+               end = fusion_line$gene1_end,
+               strand = fusion_line$gene1_strand,
+               symbol = fusion_line$known_gene1)
+  gene2 = list(chr = fusion_line$gene2_chrom,
+               start = fusion_line$gene2_start,
+               end = fusion_line$gene2_end,
+               strand = fusion_line$gene2_strand,
+               symbol = fusion_line$known_gene2)
+  seg1 = list(seg = fusion_line$gene1_segs,
+              total_cn = fusion_line$gene1_total_cn)
+  seg2 = list(seg = fusion_line$gene2_segs,
+              total_cn = fusion_line$gene2_total_cn)
+  sv1_1 = list(chr = fusion_line$SV_chrom1, bkpt = fusion_line$SV_start1,
+               strand = fusion_line$SV_strand1, id = fusion_line$SV_sv_id)
+  sv1_2 = list(chr = fusion_line$SV_chrom2, bkpt = fusion_line$SV_start2,
+               strand = fusion_line$SV_strand2, id = fusion_line$SV_sv_id)
+  sv2_1 = list(chr = fusion_line$SV2_chrom1, bkpt = fusion_line$SV2_start1,
+               strand = fusion_line$SV2_strand1, id = fusion_line$SV2_sv_id)
+  sv2_2 = list(chr = fusion_line$SV2_chrom2, bkpt = fusion_line$SV2_start2,
+               strand = fusion_line$SV2_strand2, id = fusion_line$SV2_sv_id)
+  
+  #--- Assume always 5'->3' gene
+  place_holder$fusion_id  = fusion_line$fusion_id
+  place_holder$aliquot_id = fusion_line$aliquot_id
+  place_holder$frameshift = fusion_line$frameshift
+  place_holder$match_type = fusion_line$SV_SVmatchtype
+  place_holder$fusionA_rna = list(chr = fusion_line$chr1,
+                                  bkpt = fusion_line$break1)
+  place_holder$fusionB_rna = list(chr = fusion_line$chr2,
+                                  bkpt = fusion_line$break2)
+  place_holder$fusionA_gene = fusion_line$known_gene1
+  place_holder$fusionB_gene = fusion_line$known_gene2
+  place_holder$fusionA_seg = seg1
+  place_holder$fusionB_seg = seg2
+  place_holder$fusionA_gene = gene1
+  place_holder$fusionB_gene = gene2
+  place_holder$wgs_id = fusion_line$wgs_aliquot_id
+  place_holder$histology_abbreviation = fusion_line$histology_abbreviation
+ 
+  if  (match_info[2] == "A") {
+    if (match_info[3] == 1) {
+      # fusionA --> SV1 --> SV1_1
+      # fusionB --> SV2 --> SV2_2
+      place_holder$fusionA_bkpt <- sv1_1
+      place_holder$fusionB_bkpt <- sv2_2
+      place_holder$fusionA_bridge <- sv1_2
+      place_holder$fusionB_bridge <- sv2_1
+    } else if ( match_info[3] == 2) {
+      # fusionA --> SV1 --> SV1_2
+      # fusionB --> SV2 --> SV2_1
+      place_holder$fusionA_bkpt <- sv1_2
+      place_holder$fusionB_bkpt <- sv2_1
+      place_holder$fusionA_bridge <- sv1_1
+      place_holder$fusionB_bridge <- sv2_2
+    } else if ( match_info[3] == 3) {
+      # fusionA --> SV1 --> SV1_1
+      # fusionA --> SV2 --> SV2_1
+      place_holder$fusionA_bkpt <- sv1_1
+      place_holder$fusionB_bkpt <- sv2_1
+      place_holder$fusionA_bridge <- sv1_2
+      place_holder$fusionB_bridge <- sv2_2
+      
+    } else if ( match_info[3] == 4) {
+      # fusionA --> SV1 --> SV1_2
+      # fusionB --> SV2 --> SV2_2
+      place_holder$fusionA_bkpt <- sv1_2
+      place_holder$fusionB_bkpt <- sv2_2
+      place_holder$fusionA_bridge <- sv1_1
+      place_holder$fusionB_bridge <- sv2_1
+    } else {
+      stop( "ERROR: 5' prime gene bridged matching has invalided code")
+    }
+ 
+  } 
+  
+  
+  if ( match_info[2] == "B") {
+    
+    if ( match_info[3] == 1 ) {
+      # fusionA --> SV2 --> SV2_1
+      # fusionB --> SV1 --> SV1_2 
+      place_holder$fusionA_bkpt <- sv2_1
+      place_holder$fusionB_bkpt <- sv1_2
+      place_holder$fusionA_bridge <- sv2_2
+      place_holder$fusionB_bridge <- sv1_1
+    } else if ( match_info[3] == 2 ) {
+      # fusionA --> SV2 --> SV2_2
+      # fusionB --> SV1 --> SV1_2
+      place_holder$fusionA_bkpt <- sv2_2
+      place_holder$fusionB_bkpt <- sv1_1
+      place_holder$fusionA_bridge <- sv2_1
+      place_holder$fusionB_bridge <- sv1_2
+    } else if ( match_info[3] == 3) {
+      # fusionA --> SV2 --> SV2_1
+      # fusionB --> SV1 --> SV1_1
+      place_holder$fusionA_bkpt <- sv2_1
+      place_holder$fusionB_bkpt <- sv1_1
+      place_holder$fusionA_bridge <- sv2_2
+      place_holder$fusionB_bridge <- sv1_2
+    } else if ( match_info[3] == 4) {
+      # fusionA --> SV2 --> SV2_2
+      # fusionB --> SV1 --> SV1_1
+      place_holder$fusionA_bkpt <- sv2_2
+      place_holder$fusionB_bkpt <- sv1_2
+      place_holder$fusionA_bridge <- sv2_1
+      place_holder$fusionB_bridge <- sv1_1
+    } else {
+      stop("ERROR: 3' prime gene matching has invalid code")
+    }
+    
+  }
+  return(place_holder)
+    
+}
+
+
+```
+
+
+```{r}
+###############################
+# Create composite fusions
+###############################
+composite_fusions <- lapply( 1:nrow(complex_fusions), function(idx) {
+  as.data.frame(decode_complex_match(complex_fusions[idx,]), stringsAsFactors = F)
+}) %>% 
+  do.call("rbind", .) %>% 
+  mutate_at(vars(contains("start")), as.numeric) %>% 
+  mutate_at(vars(contains("end")), as.numeric) %>% 
+  mutate_at(vars(contains("\\.bkpt")), as.numeric)
+
+
+```
+
+
+```{r}
+distPlot <- composite_fusions %>% 
+  mutate(chr_type = ifelse( fusionA_bkpt.chr == fusionB_bkpt.chr, "intra", "inter")) %>%
+  mutate(dist_bridge_bkpt = abs(fusionA_bridge.bkpt - fusionB_bridge.bkpt),
+         dist_raw_bkpt = abs(fusionA_bkpt.bkpt - fusionB_bkpt.bkpt)) 
+
+distPlot <- reshape2::melt(distPlot, id.vars = c("fusion_id", "chr_type") , 
+                 measure.vars = c("dist_bridge_bkpt", "dist_raw_bkpt"), 
+                 variable.name = "distanceType", value.name = "distance")
+library(stringr)
+distPlot <- distPlot %>%  
+  filter( !(chr_type == "inter" & distanceType == "dist_raw_bkpt" )) %>%  
+  mutate( distTypePlot = ifelse( (chr_type == "inter" & distanceType == "dist_bridge_bkpt" ),  
+                                 "Effective Distance\n(Inter)", 
+                         ifelse( (chr_type == "intra" & distanceType == "dist_raw_bkpt"), 
+                                 "Natural Distance\n(Intra)", 
+                                 "Effective Distance\n(Intra)")) )
+
+
+openxlsx::write.xlsx(distPlot, "./analysis/Fig5.PanelC.xlsx")
+```
+
+
+```{r fig.height= 6, fig.width = 4}
+ggplot(distPlot , aes( x = distTypePlot , y = log10(distance/1000))) +
+  geom_jitter(aes( color = distTypePlot), size = 0.8,alpha = .8, position = position_jitter(width = 0.1)) +
+  geom_boxplot(aes (color = distTypePlot), fill = NA, notch = T, alpha = .75) +
+  scale_color_brewer(palette = "Set1") +
+  xlab("") + ylab("Distance (log10 Kb)") +
+  theme_cowplot(font_size = 16) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 16), 
+        legend.position = "none", plot.margin = margin(r=1, l =2 , unit = "cm")) +
+  background_grid()
+```
